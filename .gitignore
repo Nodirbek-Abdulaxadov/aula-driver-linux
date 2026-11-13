@@ -1,0 +1,6 @@
+# vendor installers / binaries are not redistributed
+*.exe
+*.rar
+*.zip
+__pycache__/
+*.pyc

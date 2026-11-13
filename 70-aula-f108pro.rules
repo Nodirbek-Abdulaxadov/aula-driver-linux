@@ -1,0 +1,9 @@
+# AULA F108Pro — give the logged-in user access to the keyboard's hidraw nodes
+# (needed by aula-f108 and by WebHID in browsers).
+# The file number must be lower than 73 so that systemd's uaccess tag applies.
+
+# Wired (USB) mode: SONiX 0C45:800A
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0c45", ATTRS{idProduct}=="800a", TAG+="uaccess"
+
+# 2.4G dongle: reports itself with Apple's vendor ID 05AC:024F
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="024f", TAG+="uaccess"
