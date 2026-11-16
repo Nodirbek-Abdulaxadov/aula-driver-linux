@@ -176,27 +176,46 @@ MACRO_TABLE = MACRO_SLOTS * 4   # 0x190
 MACRO_MAX = 0xE00
 
 
-def build_macros(macros: list[list[MacroEvent]]) -> bytes:
-    buf = bytearray(MACRO_MAX)
-    buf[:MACRO_TABLE] = b"\xFF" * MACRO_TABLE
+def _macro_image(macros: list[list[MacroEvent]]) -> tuple[bytearray, int]:
+    """Offset table (100 slots; unused = 0, empty macro = FF FF FF FF) followed
+    by the macros. Returns (buffer, used length)."""
+    buf = bytearray(MACRO_MAX + 64)
     off = MACRO_TABLE
     for i, events in enumerate(macros[:MACRO_SLOTS]):
         if not events:
+            buf[i * 4:i * 4 + 4] = b"\xFF\xFF\xFF\xFF"
             continue
         blob = b"".join(e.encode() for e in events)
         need = 8 + len(blob)
-        if off + need > MACRO_MAX - 2:
+        if off + need > MACRO_MAX - 64:
             raise ValueError("macros too large for keyboard memory")
         buf[i * 4:i * 4 + 4] = bytes([off & 0xFF, off >> 8, 0, 0])
         n = len(events)
         buf[off:off + 2] = bytes([n & 0xFF, n >> 8])
         buf[off + 8:off + need] = blob
         off += need
-    length = off
+    return buf, off
+
+
+def build_macros(macros: list[list[MacroEvent]]) -> bytes:
+    """Wired image: whole 64-byte packets, at least one spare, AA 55 at the end."""
+    buf, length = _macro_image(macros)
     packets = length // 64 + (1 if length % 64 == 0 else 2)
-    out = bytearray(buf[:packets * 64].ljust(packets * 64, b"\x00"))
+    out = bytearray(buf[:packets * 64])
     out[-2:] = SIG
     return bytes(out)
+
+
+def build_macros_dongle(macros: list[list[MacroEvent]]) -> list[tuple[int, bytes]]:
+    """Dongle image as (length byte, 28 data bytes) chunks, like the vendor app:
+    L/28 + 1 + (L%28 != 0) chunks, AA 55 in the last two bytes, last length = L%28."""
+    buf, length = _macro_image(macros)
+    q = length // 28
+    count = q + 1 + (1 if length % 28 else 0)
+    img = bytearray(buf[:count * 28])
+    img[-2:] = SIG
+    return [(0x1C if i < count - 1 else length - q * 28, bytes(img[i * 28:(i + 1) * 28]))
+            for i in range(count)]
 
 
 # ---------------------------------------------------------------- settings
@@ -394,18 +413,19 @@ class Dongle:
         p[0], p[1], p[2] = cmd, length, idx
         p[3:3 + len(data)] = data[:28]
         p[31] = sum(p[:31]) & 0xFF
-        self.dev.drain()
-        try:
-            self.dev.write(bytes(p))
-        except OSError:
-            time.sleep(0.01)
-            self.dev.write(bytes(p))
-        time.sleep(0.005)
-        for _ in range(20):
-            r = self.dev.read(0.01, 64)
-            if r and r[:3] == bytes(p[:3]):
-                return r
-            time.sleep(0.01)
+        for _attempt in range(3):          # radio packets can get lost: resend on missing ack
+            self.dev.drain()
+            try:
+                self.dev.write(bytes(p))
+            except OSError:
+                time.sleep(0.01)
+                self.dev.write(bytes(p))
+            time.sleep(0.005)
+            for _ in range(20):
+                r = self.dev.read(0.01, 64)
+                if r and r[:3] == bytes(p[:3]):
+                    return r
+                time.sleep(0.01)
         return None
 
     def _chunks(self, cmd: int, data: bytes) -> None:
@@ -440,8 +460,9 @@ class Dongle:
         self._chunks(0x12 if fn_layer else 0x10, build_keymap(entries))
 
     def set_macros(self, macros: list[list[MacroEvent]]) -> None:
-        data = build_macros(macros)
-        self._chunks(0x09, data)
+        for i, (length, data) in enumerate(build_macros_dongle(macros)):
+            self._xfer(0x09, length, i, data)
+            time.sleep(0.002)
 
     def set_settings(self, s: Settings) -> None:
         self._xfer(0x07, 0x10, 0, s.data64()[:16])

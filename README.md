@@ -30,15 +30,20 @@ kerak; boshqa kutubxona yo'q. O'rnatmasdan ishga tushirish:
 
 | Bo'lim | Nima qiladi | USB | 2.4G |
 |---|---|---|---|
-| Yorug'lik | 20 ta o'rnatilgan effekt, rang / kamalak, yorqinlik 0–5, tezlik 0–5, yo'nalish | ✅ sinalgan | ⚠️ sinalmagan |
-| Ranglar | Har bir tugmaga alohida rang (klaviatura xotirasiga), joriy ranglarni o'qish | ✅ sinalgan | ⚠️ (o'qish faqat USB) |
-| Tugmalar | Asosiy va Fn qatlam: boshqa tugma/kombinatsiya, multimedia, sichqoncha, makros, o'chirish | ⚠️ sinalmagan | ⚠️ |
-| Makroslar | Yozib olish (kechikishlar bilan), tahrirlash, 100 tagacha | ⚠️ sinalmagan | ⚠️ |
-| Sozlamalar | Win / Alt+F4 / Alt+Tab bloklash, Fn rejimi, uyqu vaqti, debounce, ekran soati, tiklash | ⚠️ sinalmagan | ⚠️ |
+| Yorug'lik | 20 ta o'rnatilgan effekt, rang / kamalak, yorqinlik 0–5, tezlik 0–5, yo'nalish | ✅ | ✅ |
+| Ranglar | Har bir tugmaga alohida rang (klaviatura xotirasiga), joriy ranglarni o'qish | ✅ | ✅ (o'qish faqat USB) |
+| Tugmalar | Asosiy va Fn qatlam: boshqa tugma/kombinatsiya, multimedia, sichqoncha, makros, o'chirish | ⚠️ | ✅ |
+| Makroslar | Yozib olish (kechikishlar bilan), tahrirlash, 100 tagacha | ⚠️ | ✅ |
+| Sozlamalar | Win / Alt+F4 / Alt+Tab bloklash, Fn rejimi, uyqu vaqti, debounce, ekran soati, tiklash | ⚠️ | ✅ Win bloki |
+| Batareya | Dongle orqali batareya foizi | — | ✅ |
 
-«Sinalmagan» — paketlar asl drayverdagi bilan bir xil quriladi, lekin
-klaviaturada tekshirilmagan (bu buyruqlar klaviaturadagi mavjud tugma
-xaritasi/makros/sozlamalarni to'liq qayta yozadi).
+✅ — klaviaturada tekshirilgan. ⚠️ — USB kabel orqali sinalmagan: ma'lumot
+2.4G bilan bir xil quriladi, USB aloqa esa yorug'lik buyruqlarida
+tekshirilgan. Uyqu vaqti, debounce, Fn rejimi va ekran soati klaviatura
+tomonidan qabul qilinadi, lekin ta'siri alohida tekshirilmagan.
+
+Tugmalar, makroslar va sozlamalarni yozish klaviaturadagi mavjud
+jadvalni to'liq almashtiradi.
 
 Klaviatura tugma xaritasi, makros va sozlamalarni qaytarib bera olmaydi, shu
 sabab ular kompyuterda saqlanadi: `~/.config/aula-f108/profile.json`.
