@@ -48,6 +48,14 @@ EFFECTS: dict[int, tuple[str, str]] = {
     19: ("Shuttle", "BSC"),
 }
 MODE_USER = 0x80          # per-key ("user") lighting
+
+# Music rhythm (2.4G command 0x0B) — combobox values from the vendor driver
+MUSIC_SCHEMES = {1: "Green/Yellow/Red", 2: "Rainbow", 3: "Reverse Rainbow", 4: "Gradient",
+                 5: "Spectrum Cycle", 6: "White", 7: "Red", 8: "Orange", 9: "Yellow",
+                 10: "Blue", 11: "Green"}
+MUSIC_BACKGROUNDS = {0: "Off", 1: "Green/Yellow/Red", 2: "Rainbow", 3: "Reverse Rainbow",
+                     4: "Gradient", 5: "Spectrum Cycle", 6: "White", 7: "Red", 8: "Orange",
+                     9: "Yellow", 10: "Blue", 11: "Green"}
 BRIGHTNESS_MAX = 5
 SPEED_MAX = 5
 
@@ -408,12 +416,12 @@ class Dongle:
     def close(self):
         self.dev.close()
 
-    def _xfer(self, cmd: int, length: int, idx: int, data: bytes = b"") -> bytes | None:
+    def _xfer(self, cmd: int, length: int, idx: int, data: bytes = b"", retries: int = 3) -> bytes | None:
         p = bytearray(32)
         p[0], p[1], p[2] = cmd, length, idx
         p[3:3 + len(data)] = data[:28]
         p[31] = sum(p[:31]) & 0xFF
-        for _attempt in range(3):          # radio packets can get lost: resend on missing ack
+        for _attempt in range(retries):    # radio packets can get lost: resend on missing ack
             self.dev.drain()
             try:
                 self.dev.write(bytes(p))
@@ -452,6 +460,15 @@ class Dongle:
 
     def stream(self, colors):
         raise DeviceError("real-time lighting is only available over USB")
+
+    def music(self, heights: list[int], scheme: int = 2, background: int = 0,
+              bg_brightness: int = 100) -> bool:
+        """One music-rhythm frame; the keyboard renders it itself.
+        heights: 21 column heights 0..6 (lit key rows from the bottom).
+        scheme: MUSIC_SCHEMES value, background: MUSIC_BACKGROUNDS value."""
+        hs = bytes(max(0, min(6, int(h))) for h in heights[:21]).ljust(21, b"\x00")
+        data = bytes([scheme & 0xFF, background & 0xFF, max(0, min(100, int(bg_brightness)))]) + hs
+        return self._xfer(0x0B, 0x1C, 0, data, retries=1) is not None
 
     def read_colors(self):
         raise DeviceError("reading colours is only available over USB")

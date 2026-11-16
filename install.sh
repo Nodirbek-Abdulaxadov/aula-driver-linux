@@ -7,7 +7,9 @@ set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST="$HOME/.local/share/aula-f108"
 BIN="$HOME/.local/bin/aula-f108"
-DESKTOP="$HOME/.local/share/applications/aula-f108.desktop"
+# named after the application id so GNOME links windows and notifications to it
+DESKTOP="$HOME/.local/share/applications/uz.local.AulaF108.desktop"
+OLD_DESKTOP="$HOME/.local/share/applications/aula-f108.desktop"
 RULE=/etc/udev/rules.d/70-aula-f108pro.rules
 
 reload_udev() {
@@ -16,7 +18,7 @@ reload_udev() {
 }
 
 if [[ "${1:-}" == "--uninstall" ]]; then
-    rm -rf "$DEST" "$BIN" "$DESKTOP"
+    rm -rf "$DEST" "$BIN" "$DESKTOP" "$OLD_DESKTOP"
     if [[ -f "$RULE" ]]; then
         sudo rm -f "$RULE"
         reload_udev
@@ -32,8 +34,12 @@ python3 -c 'import gi; gi.require_version("Gtk","4.0"); gi.require_version("Adw"
 }
 
 echo "1/3  udev qoidasi (klaviaturaga sudo'siz kirish uchun)…"
-sudo install -m 0644 "$SRC/70-aula-f108pro.rules" "$RULE"
-reload_udev
+if cmp -s "$SRC/70-aula-f108pro.rules" "$RULE"; then
+    echo "     allaqachon o'rnatilgan"
+else
+    sudo install -m 0644 "$SRC/70-aula-f108pro.rules" "$RULE"
+    reload_udev
+fi
 
 echo "2/3  Dastur fayllari → $DEST"
 rm -rf "$DEST"
@@ -49,6 +55,7 @@ EOF
 chmod +x "$BIN"
 
 echo "3/3  Menyu yorlig'i…"
+rm -f "$OLD_DESKTOP"
 cat > "$DESKTOP" <<EOF
 [Desktop Entry]
 Type=Application

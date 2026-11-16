@@ -42,6 +42,8 @@ class Profile:
         self.keymap: dict[str, dict[int, dict]] = {"main": {}, "fn": {}}
         self.macros: list[dict] = []          # {"name": str, "events": [MacroEvent-as-dict]}
         self.settings = Settings()
+        self.music: dict = {"style": "spectrum", "scheme": 2, "background": 0,
+                            "bg_brightness": 100, "gain": 1.0}
 
     # -- (de)serialisation -------------------------------------------------
     def to_json(self) -> dict:
@@ -52,6 +54,7 @@ class Profile:
             "keymap": {layer: {str(k): v for k, v in m.items()} for layer, m in self.keymap.items()},
             "macros": self.macros,
             "settings": asdict(self.settings),
+            "music": self.music,
         }
 
     @classmethod
@@ -68,6 +71,7 @@ class Profile:
         p.macros = d.get("macros", [])
         if "settings" in d:
             p.settings = Settings(**d["settings"])
+        p.music.update(d.get("music", {}))
         return p
 
     @classmethod

@@ -1,6 +1,7 @@
 """GTK4 / libadwaita control panel for the AULA F108Pro."""
 from __future__ import annotations
 
+import colorsys
 import queue
 import sys
 import threading
@@ -12,13 +13,14 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gsk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Graphene", "1.0")
-from gi.repository import Adw, Gdk, GLib, Graphene, Gsk, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from . import keycodes as kc  # noqa: E402
 from .config import Profile  # noqa: E402
 from .layout import Key, load_layout  # noqa: E402
-from .protocol import (BRIGHTNESS_MAX, EFFECTS, SPEED_MAX, DeviceError, Effect,  # noqa: E402
-                       find_devices, open_keyboard)
+from .music import AlreadyRunning, run as music_run  # noqa: E402
+from .protocol import (BRIGHTNESS_MAX, EFFECTS, MUSIC_BACKGROUNDS, MUSIC_SCHEMES, SPEED_MAX,  # noqa: E402
+                       DeviceError, Effect, find_devices, open_keyboard)
 from .settings_values import (FN_SWITCH, KEY_RESPOND, MACRO_MODES, SLEEP_TIME)  # noqa: E402
 
 APP_ID = "uz.local.AulaF108"
@@ -71,14 +73,14 @@ def string_combo(title: str, items: list[str], subtitle: str = "") -> Adw.ComboR
     return row
 
 
-def scale_row(title: str, lo: int, hi: int) -> tuple[Adw.ActionRow, Gtk.Scale]:
+def scale_row(title: str, lo: int, hi: int, marks: bool = True) -> tuple[Adw.ActionRow, Gtk.Scale]:
     row = Adw.ActionRow(title=title)
     sc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, 1)
     sc.set_digits(0)
     sc.set_draw_value(True)
     sc.set_hexpand(True)
     sc.set_size_request(260, -1)
-    for v in range(lo, hi + 1):
+    for v in range(lo, hi + 1) if marks else ():
         sc.add_mark(v, Gtk.PositionType.BOTTOM, None)
     row.add_suffix(sc)
     return row, sc
@@ -834,6 +836,134 @@ class SettingsPage(Adw.PreferencesPage):
         self.w.run(job, "Zavod sozlamalari tiklandi — dasturni qayta oching")
 
 
+class LevelMeter(Gtk.Widget):
+    """21-band level bars (what the music mode currently hears)."""
+    __gtype_name__ = "AulaLevelMeter"
+
+    def __init__(self):
+        super().__init__()
+        self.levels = [0.0] * 21
+        self.set_hexpand(True)
+        self.set_size_request(-1, 90)
+
+    def set_levels(self, levels):
+        self.levels = list(levels)
+        self.queue_draw()
+
+    def do_snapshot(self, snap):
+        w, h = self.get_width(), self.get_height()
+        n, gap = len(self.levels), 3
+        bw = (w - gap * (n - 1)) / n
+        for i, v in enumerate(self.levels):
+            x = i * (bw + gap)
+            snap.append_color(_rgba((0.5, 0.5, 0.5, 0.15)), _rect(x, 0, bw, h))
+            bh = max(2.0, v * h)
+            r, g, b = colorsys.hsv_to_rgb(i / n, 0.75, 0.95)
+            snap.append_color(_rgba((r, g, b, 1)), _rect(x, h - bh, bw, bh))
+
+
+MUSIC_STYLES = [("spectrum", "Spektr (kamalak ustunlar)"), ("heat", "Issiqlik (yashil → qizil)"),
+                ("pulse", "Puls (bass bilan yonib-o'chadi)")]
+_UZ_COLOURS = {"Off": "O'chiq", "Green/Yellow/Red": "Yashil / sariq / qizil", "Rainbow": "Kamalak",
+               "Reverse Rainbow": "Teskari kamalak", "Gradient": "Gradient",
+               "Spectrum Cycle": "Spektr aylanishi", "White": "Oq", "Red": "Qizil",
+               "Orange": "To'q sariq", "Yellow": "Sariq", "Blue": "Ko'k", "Green": "Yashil"}
+
+
+class MusicPage(Adw.PreferencesPage):
+    def __init__(self, app_win):
+        super().__init__(title="Musiqa", icon_name="audio-x-generic-symbolic")
+        self.w = app_win
+        m = app_win.profile.music
+
+        g = Adw.PreferencesGroup(
+            title="Musiqa ritmi",
+            description="Kompyuterda chalinayotgan ovozga qarab klaviatura yonadi. USB kabelda ranglarni "
+                        "dastur chizadi, 2.4G'da esa klaviaturaning o'zi. Musiqa ishlayotganda oynani "
+                        "yopsangiz, dastur fonda qoladi — to'xtatish uchun menyudan qayta oching.")
+        self.add(g)
+        self.meter = LevelMeter()
+        self.meter.set_margin_bottom(12)
+        g.add(self.meter)
+        self.status = Adw.ActionRow(title="To'xtatilgan")
+        self.toggle = Gtk.Button(label="Boshlash", valign=Gtk.Align.CENTER,
+                                 css_classes=["suggested-action", "pill"])
+        self.toggle.connect("clicked", self._toggle)
+        self.status.add_suffix(self.toggle)
+        g.add(self.status)
+        self.gain_row = Adw.ActionRow(title="Sezgirlik", subtitle="Past ovozda ustunlar kichik bo'lsa, oshiring")
+        self.gain = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.5, 3.0, 0.1)
+        self.gain.set_digits(1)
+        self.gain.set_size_request(260, -1)
+        self.gain.set_value(float(m.get("gain", 1.0)))
+        self.gain.add_mark(1.0, Gtk.PositionType.BOTTOM, None)
+        self.gain_row.add_suffix(self.gain)
+        g.add(self.gain_row)
+
+        g2 = Adw.PreferencesGroup(title="USB (kabel) rejimi")
+        self.add(g2)
+        self.style = string_combo("Uslub", [n for _v, n in MUSIC_STYLES])
+        styles = [v for v, _n in MUSIC_STYLES]
+        self.style.set_selected(styles.index(m.get("style")) if m.get("style") in styles else 0)
+        g2.add(self.style)
+
+        g3 = Adw.PreferencesGroup(title="2.4G rejimi", description="Bu rejimda ranglarni klaviaturaning o'zi chizadi.")
+        self.add(g3)
+        self.schemes = list(MUSIC_SCHEMES)
+        self.scheme = string_combo("Ustunlar rangi", [_UZ_COLOURS[MUSIC_SCHEMES[k]] for k in self.schemes])
+        self.scheme.set_selected(self.schemes.index(m.get("scheme")) if m.get("scheme") in self.schemes else 1)
+        g3.add(self.scheme)
+        self.bgs = list(MUSIC_BACKGROUNDS)
+        self.bg = string_combo("Fon", [_UZ_COLOURS[MUSIC_BACKGROUNDS[k]] for k in self.bgs])
+        self.bg.set_selected(self.bgs.index(m.get("background")) if m.get("background") in self.bgs else 0)
+        g3.add(self.bg)
+        self.bgb_row, self.bgb = scale_row("Fon yorqinligi", 0, 100, marks=False)
+        self.bgb.set_value(int(m.get("bg_brightness", 100)))
+        g3.add(self.bgb_row)
+
+        for wdg, sig in ((self.style, "notify::selected"), (self.scheme, "notify::selected"),
+                         (self.bg, "notify::selected"), (self.gain, "value-changed"),
+                         (self.bgb, "value-changed")):
+            wdg.connect(sig, lambda *a: self._changed())
+        self._changed(save=False)
+
+    def _changed(self, save=True):
+        m = self.w.profile.music          # updated in place: a running loop picks it up live
+        m["style"] = MUSIC_STYLES[self.style.get_selected()][0]
+        m["scheme"] = self.schemes[self.scheme.get_selected()]
+        m["background"] = self.bgs[self.bg.get_selected()]
+        m["bg_brightness"] = int(self.bgb.get_value())
+        m["gain"] = round(self.gain.get_value(), 1)
+        self.bgb_row.set_sensitive(m["background"] != 0)
+        if save:
+            self.w.profile.save()
+
+    def _toggle(self, *_):
+        if self.w.music_running():
+            self.w.music_stop()
+        else:
+            self.w.music_start()
+
+    # called on the GTK thread
+    def on_started(self):
+        self.toggle.set_label("To'xtatish")
+        self.toggle.set_css_classes(["destructive-action", "pill"])
+        self.status.set_title("Ishlayapti…")
+
+    def on_frame(self, levels, kind, fps):
+        self.meter.set_levels(levels)
+        self.status.set_title(f"Ishlayapti — {'USB' if kind == 'wired' else '2.4G'}, {fps:.0f} kadr/s")
+        return False
+
+    def on_stopped(self):
+        self.toggle.set_label("Boshlash")
+        self.toggle.set_css_classes(["suggested-action", "pill"])
+        self.status.set_title("To'xtatilgan")
+        self.meter.set_levels([0.0] * 21)
+        self.w.music_stopped_while_hidden()
+        return False
+
+
 # ===================================================================== window
 class MainWindow(Adw.ApplicationWindow):
     def __init__(self, app):
@@ -863,13 +993,19 @@ class MainWindow(Adw.ApplicationWindow):
         self.perkey_page = PerKeyPage(self)
         self.keys_page = KeysPage(self)
         self.macros_page = MacrosPage(self)
+        self.music_page = MusicPage(self)
         self.settings_page = SettingsPage(self)
         stack.add_titled_with_icon(self.light_page, "light", "Yorug'lik", "weather-clear-symbolic")
         stack.add_titled_with_icon(self.perkey_page, "perkey", "Ranglar", "applications-graphics-symbolic")
         stack.add_titled_with_icon(self.keys_page, "keys", "Tugmalar", "input-keyboard-symbolic")
         stack.add_titled_with_icon(self.macros_page, "macros", "Makroslar", "media-record-symbolic")
+        stack.add_titled_with_icon(self.music_page, "music", "Musiqa", "audio-x-generic-symbolic")
         stack.add_titled_with_icon(self.settings_page, "settings", "Sozlamalar", "emblem-system-symbolic")
         stack.connect("notify::visible-child", lambda *a: self.keys_page._type_changed())
+
+        self._music_thread: threading.Thread | None = None
+        self._music_stop = False
+        self.connect("close-request", self._on_close)
 
         self._battery = None
         self._refresh_status()
@@ -895,7 +1031,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _poll_battery(self):
         f = find_devices()
-        if f.dongle and not f.wired and not f.problems and not self.worker.busy:
+        if f.dongle and not f.wired and not f.problems and not self.worker.busy and not self.music_running():
             def done(v):
                 self._battery = v
                 self._refresh_status()
@@ -906,7 +1042,69 @@ class MainWindow(Adw.ApplicationWindow):
     def toast(self, text: str):
         self.toasts.add_toast(Adw.Toast(title=text, timeout=3))
 
+    # -- music mode (own thread; device jobs stop it first so they never interleave)
+    def music_running(self) -> bool:
+        return self._music_thread is not None and self._music_thread.is_alive()
+
+    def music_start(self):
+        if self.music_running():
+            return
+        if self.worker.busy:
+            self.toast("Klaviatura band, birozdan keyin urinib ko'ring")
+            return
+        self._music_stop = False
+        page = self.music_page
+
+        def target():
+            try:
+                music_run(self.profile.music, stop=lambda: self._music_stop,
+                          on_frame=lambda lv, kind, fps: GLib.idle_add(page.on_frame, list(lv), kind, fps))
+            except AlreadyRunning as e:
+                GLib.idle_add(self.toast, str(e))
+            except Exception as e:  # noqa: BLE001
+                GLib.idle_add(self.toast, f"Musiqa to'xtadi: {e}")
+            finally:
+                GLib.idle_add(page.on_stopped)
+
+        self._music_thread = threading.Thread(target=target, daemon=True)
+        self._music_thread.start()
+        page.on_started()
+
+    def music_stop(self, restore: bool = True):
+        if not self.music_running():
+            return
+        self._music_stop = True
+        self._music_thread.join(2)
+        if restore:          # put the saved lighting back
+            eff = self.profile.effect
+            self.run(lambda kb: kb.set_effect(eff), None)
+
+    def _on_close(self, *_):
+        if self.music_running():
+            # music needs this process: keep running in the background, just hide the window
+            self.set_visible(False)
+            n = Gio.Notification.new("AULA F108Pro: musiqa fonda ishlayapti")
+            n.set_body("To'xtatish uchun «AULA F108Pro» ni menyudan qayta oching.")
+            self.get_application().send_notification("music-background", n)
+            return True
+        return False
+
+    def music_stopped_while_hidden(self):
+        """Music ended (error / device gone) while the window was hidden: restore and quit."""
+        if self.get_visible():
+            return
+        try:
+            kb = open_keyboard()
+            kb.set_effect(self.profile.effect)
+            kb.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self.get_application().withdraw_notification("music-background")
+        self.close()
+
     def run(self, job, ok_text: str | None, done=None):
+        if self.music_running():
+            self.music_stop(restore=False)
         self.spinner.set_visible(True)
 
         def _done(res):
@@ -930,8 +1128,12 @@ class App(Adw.Application):
         super().__init__(application_id=APP_ID)
 
     def do_activate(self):
-        win = self.props.active_window or MainWindow(self)
+        # a second launch lands here too (single instance): bring back a hidden window
+        wins = self.get_windows()
+        win = wins[0] if wins else MainWindow(self)
+        win.set_visible(True)
         win.present()
+        self.withdraw_notification("music-background")
 
 
 def main():
