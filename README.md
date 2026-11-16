@@ -32,15 +32,15 @@ kerak; boshqa kutubxona yo'q. O'rnatmasdan ishga tushirish:
 |---|---|---|---|
 | Yorug'lik | 20 ta o'rnatilgan effekt, rang / kamalak, yorqinlik 0–5, tezlik 0–5, yo'nalish | ✅ | ✅ |
 | Ranglar | Har bir tugmaga alohida rang (klaviatura xotirasiga), joriy ranglarni o'qish | ✅ | ✅ (o'qish faqat USB) |
-| Tugmalar | Asosiy va Fn qatlam: boshqa tugma/kombinatsiya, multimedia, sichqoncha, makros, o'chirish | ⚠️ | ✅ |
-| Makroslar | Yozib olish (kechikishlar bilan), tahrirlash, 100 tagacha | ⚠️ | ✅ |
-| Sozlamalar | Win / Alt+F4 / Alt+Tab bloklash, Fn rejimi, uyqu vaqti, debounce, ekran soati, tiklash | ⚠️ | ✅ Win bloki |
+| Tugmalar | Asosiy va Fn qatlam: boshqa tugma/kombinatsiya, multimedia, sichqoncha, makros, o'chirish | ✅ | ✅ |
+| Makroslar | Yozib olish (kechikishlar bilan), tahrirlash, 100 tagacha | ✅ | ✅ |
+| Sozlamalar | Win / Alt+F4 / Alt+Tab bloklash, Fn rejimi, uyqu vaqti, debounce, ekran soati, tiklash | ✅ Win bloki, ekran soati | ✅ Win bloki |
 | Batareya | Dongle orqali batareya foizi | — | ✅ |
 
-✅ — klaviaturada tekshirilgan. ⚠️ — USB kabel orqali sinalmagan: ma'lumot
-2.4G bilan bir xil quriladi, USB aloqa esa yorug'lik buyruqlarida
-tekshirilgan. Uyqu vaqti, debounce, Fn rejimi va ekran soati klaviatura
-tomonidan qabul qilinadi, lekin ta'siri alohida tekshirilmagan.
+✅ — klaviaturada tekshirilgan (tugma bosilganda klaviatura yuborgan HID
+hisobotlari bilan). Alt+F4 / Alt+Tab bloklash, Fn rejimi, uyqu vaqti va
+debounce klaviatura tomonidan qabul qilinadi, lekin ta'siri alohida
+tekshirilmagan.
 
 Tugmalar, makroslar va sozlamalarni yozish klaviaturadagi mavjud
 jadvalni to'liq almashtiradi.
