@@ -75,6 +75,9 @@ EOF
     chmod 0755 "$PKG/DEBIAN/$script"
 done
 
+find "$PKG" -type d -exec chmod 0755 {} +
+find "$PKG/usr" -type f -exec chmod 0644 {} +
+chmod 0755 "$PKG/usr/bin/aula-f108"
 dpkg-deb --root-owner-group --build "$PKG" "$OUT/" >/dev/null
 
 # ---------------------------------------------------------------- source archive
